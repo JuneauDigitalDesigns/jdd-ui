@@ -1,6 +1,6 @@
 {
   "name": "@jdd/ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Shared design tokens, motion presets, icon registry and the LeadForm island used by the JDD catalog. Consumed by the console (authoring), the template, and every exported client repo.",
   "type": "module",
   "exports": {
@@ -21,7 +21,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "peerDependencies": {
-    "@jdd/schema": "*",
     "@phosphor-icons/react": ">=2",
     "framer-motion": ">=11",
     "react": ">=18"
@@ -36,10 +35,5 @@
     "@types/react-dom": "^18.3.1"
   },
   "license": "UNLICENSED",
-  "private": false,
-  "peerDependenciesMeta": {
-    "@jdd/schema": {
-      "optional": true
-    }
-  }
+  "private": false
 }

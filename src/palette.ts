@@ -1,6 +1,33 @@
 import type { CSSProperties } from 'react';
-import type { Brand } from '@jdd/schema';
 import { shade, mix, withAlpha } from './color';
+
+/**
+ * The shape these functions actually read — declared structurally rather than imported from
+ * @jdd/schema on purpose.
+ *
+ * `template/` and every exported client repo define their SiteContent types locally and do
+ * NOT depend on @jdd/schema, so importing `Brand` from it here would make this package fail
+ * to typecheck in exactly the repos it is meant to serve. TypeScript is structural, so the
+ * real `BrandContent` satisfies this without any nominal link, and the package stays
+ * dependency-free.
+ */
+export type BrandLike = {
+  palette: {
+    accent: string;
+    accentFg?: string | null;
+    bg: string;
+    bgSoft: string;
+    ink: string;
+    inkSoft: string;
+    rule: string;
+  };
+  typography: {
+    fontSans: string;
+    fontHeading: string;
+    headingWeight: number;
+    bodyWeight: number;
+  };
+};
 
 // Maps the brand palette + typography onto CSS custom properties. layout.tsx
 // spreads these onto <body> so every component inherits them via Tailwind tokens
@@ -9,7 +36,7 @@ import { shade, mix, withAlpha } from './color';
 // Beyond the 7 authored brand tokens, we derive a richer set at runtime (tint ramp,
 // gradient, and an on-brand dark "contrast" surface) so catalog components can reach
 // for premium tones without any change to the brand schema.
-export function paletteVars(brand: Brand): CSSProperties {
+export function paletteVars(brand: BrandLike): CSSProperties {
   const p = brand.palette;
   const { accent, ink, bg } = p;
   const accentStrong = shade(accent, 0.2);
@@ -69,7 +96,7 @@ export function paletteVars(brand: Brand): CSSProperties {
   } as CSSProperties;
 }
 
-export function typographyVars(brand: Brand): CSSProperties {
+export function typographyVars(brand: BrandLike): CSSProperties {
   const t = brand.typography;
   return {
     '--font-sans': t.fontSans,
