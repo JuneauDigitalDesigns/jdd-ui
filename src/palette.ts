@@ -62,7 +62,17 @@ export function paletteVars(brand: BrandLike): CSSProperties {
        entirely, so the computed-and-correct answer (brand ink, ~7:1) was overridden by a
        hand-entered one that failed. That was one of the three color-contrast failures
        holding Lighthouse Accessibility at 96. A client may not choose an illegible site. */
-    '--accent-fg': passesAA(p.accentFg, accent) ? (p.accentFg as string) : readableOn(accent, ink),
+    /* `readableOn(accent, ink)` was WRONG on a dark palette. It picks whichever of white or
+       its second argument contrasts better — and on a dark palette `ink` is a near-WHITE, so
+       both candidates were light and it returned white regardless: #ffffff on #e08b29 is
+       2.66:1, on #E05C2A 3.66:1, on a yellow accent 1.27:1. Every dark-palette client would
+       have shipped an illegible primary CTA. Caught by the palette contrast suite, which
+       exercises dark palettes; no client has used one yet, which is why it never surfaced.
+       Passing `ink` is still right when ink actually IS dark — it keeps the label on-brand
+       rather than pure black. */
+    '--accent-fg': passesAA(p.accentFg, accent)
+      ? (p.accentFg as string)
+      : readableOn(accent, isDarkHex(ink) ? ink : '#0f1b2d'),
     /* Accent, darkened until it clears AA as TEXT on the page background.
 
        `--accent` stays the authored brand color and remains correct for fills, borders and

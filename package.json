@@ -1,6 +1,6 @@
 {
   "name": "@jdd/ui",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Shared design tokens, motion presets, icon registry and the LeadForm island used by the JDD catalog. Consumed by the console (authoring), the template, and every exported client repo.",
   "type": "module",
   "exports": {
