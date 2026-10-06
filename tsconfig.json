@@ -1,0 +1,28 @@
+{
+  // Added 2026-10-06 (Phase 2 of console/design/PLAN-template-fidelity-v2.md). The package's
+  // `typecheck` script has always pointed at this file, but the file did not exist, so
+  // `npm run typecheck` failed with TS5058 rather than checking anything. Every @jdd/ui release
+  // in that plan (v1.0.3 through v1.0.7) uses typecheck as the first gate of the §0.3a loop, so
+  // the gate had to become real before the first of them was cut.
+  //
+  // This package has NO build step: package.json's `exports` map points at raw ./src/*.ts and
+  // the consumers (console, template, every exported client repo) compile it as part of their
+  // own builds. So these options mirror console/tsconfig.json rather than describing an emit.
+  // `noEmit` is set here as well as on the CLI, so running tsc directly cannot write JS into src.
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["dom", "dom.iterable", "ES2022"],
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "isolatedModules": true,
+    // "preserve" (not "react-jsx") to match the consumers: LeadForm.tsx is compiled by Next in
+    // the app that imports it, not here.
+    "jsx": "preserve"
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"],
+  "exclude": ["node_modules"]
+}

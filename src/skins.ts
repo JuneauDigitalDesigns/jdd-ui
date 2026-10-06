@@ -84,7 +84,13 @@ export type SkinClasses = {
   cardRule: string;
 };
 
-/** Shared surface + typography treatment per skin; components compose these with their own layout. */
+/** Shared surface + typography treatment per skin; components compose these with their own layout.
+ *
+ * Decision 10 demotes the accent to the primary CTA and urgency only. `eyebrow` keeps
+ * text-accent for back-compat (decision 3: a shipped repo must keep rendering), but NO NEW
+ * component should use s.eyebrow as a colour cue. Eyebrows are being removed, not
+ * recoloured: SPEC §3 gives the h2 that job and puts a plain sentence under it. Changing the
+ * value here would silently restyle every already-exported client repo on its next overwrite. */
 export function skinClasses(skin: SkinId): SkinClasses {
   switch (skin) {
     /* ── surface roles ────────────────────────────────────────────────────────

@@ -29,6 +29,21 @@ export type BrandLike = {
   };
 };
 
+/**
+ * The warm anchors. Decision 9 of console/design/DECISIONS-template-fidelity-v2.md moves every
+ * default ground off pure white and every default ink off pure black / cool navy: research §5
+ * records that both 2026 trend data and every Tier B measurement point the same way, and that
+ * pure-white grounds plus indigo accents are a named AI-sameness tell (research §6 item 3).
+ *
+ * These are the fallbacks the derivation reaches for when the client's own ink is unusable, so
+ * they have to be concrete values, not a hue rotation of something.
+ *
+ * Measured 2026-10-06: WARM_PAPER on WARM_INK is 17.10:1, so nothing is lost against the pure
+ * pair it replaces.
+ */
+const WARM_INK = '#1A1512';    // warm charcoal. Replaces the old cool navy '#0f1b2d'.
+const WARM_PAPER = '#FBF8F4';  // warm off-white. Replaces pure '#ffffff' as a FOREGROUND.
+
 // Maps the brand palette + typography onto CSS custom properties. layout.tsx
 // spreads these onto <body> so every component inherits them via Tailwind tokens
 // (bg-accent, text-ink, border-rule, …) and the font-sans / font-heading families.
@@ -47,8 +62,13 @@ export function paletteVars(brand: BrandLike): CSSProperties {
   // (tinting toward white on a dark page washes the ramp out to nothing).
   const dark = isDarkHex(bg);
   const inkPanel = dark ? shade(bg, 0.25) : shade(ink, 0.08);
-  const onInk = readableOn(inkPanel, dark ? ink : '#0f1b2d');
-  const rampTarget = dark ? bg : '#ffffff';
+  const onInk = readableOn(inkPanel, dark ? ink : WARM_INK);
+  /* Decision 9 extends to the tint ramp: mixing the accent toward pure white produced faintly
+     COOL tints sitting on a warm paper ground, which is the exact mismatch decision 9 exists to
+     remove. Mixing toward WARM_PAPER keeps --accent-050/100/200 in the same temperature as the
+     page. These are background tints, so the change is not contrast-bearing (WARM_PAPER is
+     17.10:1 on the warm ink, against pure white's ~18:1). */
+  const rampTarget = dark ? bg : WARM_PAPER;
 
   return {
     // ── authored tokens (unchanged) ──
@@ -72,7 +92,7 @@ export function paletteVars(brand: BrandLike): CSSProperties {
        rather than pure black. */
     '--accent-fg': passesAA(p.accentFg, accent)
       ? (p.accentFg as string)
-      : readableOn(accent, isDarkHex(ink) ? ink : '#0f1b2d'),
+      : readableOn(accent, isDarkHex(ink) ? ink : WARM_INK),
     /* Accent, darkened until it clears AA as TEXT on the page background.
 
        `--accent` stays the authored brand color and remains correct for fills, borders and
@@ -96,6 +116,7 @@ export function paletteVars(brand: BrandLike): CSSProperties {
     '--accent-200': mix(accent, rampTarget, 0.68),
     '--accent-strong': accentStrong,
     '--accent-glow': withAlpha(accent, 0.32),
+    // DEPRECATED by decision 30(b). Still derived so shipped repos keep rendering; no new component may use it.
     '--accent-grad': `linear-gradient(135deg, ${accent} 0%, ${accentStrong} 100%)`,
     // ── on-brand dark ("contrast" skin) section tones ──
     '--ink-panel': inkPanel,
@@ -115,6 +136,12 @@ export function typographyVars(brand: BrandLike): CSSProperties {
     '--body-weight': String(t.bodyWeight),
   } as CSSProperties;
 }
+
+/* `sectionVars` is intentionally NOT in this package. It is defined in template/src/lib/palette.ts
+   (and its console twin) because those are TEMPLATE-OWNED files: an `overwrite` export refreshes
+   them into every client repo with no @jdd/ui release. A copy here was added and never published;
+   it was deleted rather than published, to avoid a star-export collision with the template's own
+   definition. Keep the two twins byte-identical to each other. */
 
 // ── Contrast helper ───────────────────────────────────────────────────────────
 // Picks the more readable foreground (white or the brand ink) for text on the accent
@@ -186,7 +213,7 @@ function accentText(accent: string, ...bgs: string[]): string {
     const [primary] = bgs;
     // Direction comes from the primary background; a page is light or dark as a whole, and
     // `--bg-soft` is by definition a near neighbour of `--bg`.
-    const toward = isDarkHex(primary) ? '#ffffff' : '#000000';
+    const toward = isDarkHex(primary) ? WARM_PAPER : '#181310';
     let candidate = accent;
     for (let i = 0; i < 24; i++) {
       // Must clear AA on EVERY surface it can land on, not just --bg. This token is used by
@@ -225,14 +252,16 @@ function urgentTone(...bgs: string[]): string {
   return accentText(ALERT_RED, ...bgs);
 }
 
-/** White or `dark` (brand ink), whichever contrasts better against `bg`. */
-export function readableOn(bg: string, dark = '#0f1b2d'): string {
+/** The warm off-white or `dark` (brand ink), whichever contrasts better against `bg`.
+ *  Neither candidate is a pure value any more (decision 9): pure white on a dark panel is the
+ *  cheap tell, and the warm off-white is 17.10:1 on the warm ink, so nothing is lost. */
+export function readableOn(bg: string, dark = WARM_INK): string {
   try {
     const lb = relLuminance(bg);
-    const whiteC = contrastRatio(1, lb);
+    const lightC = contrastRatio(relLuminance(WARM_PAPER), lb);
     const darkC = contrastRatio(relLuminance(dark), lb);
-    return darkC > whiteC ? dark : '#ffffff';
+    return darkC > lightC ? dark : WARM_PAPER;
   } catch {
-    return '#ffffff';
+    return WARM_PAPER;
   }
 }
