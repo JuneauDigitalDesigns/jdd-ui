@@ -1,12 +1,16 @@
 // Shared framer-motion presets for the catalog.
 //
-// Two tiers:
-//  1. Micro-interactions (default, use freely) — reveals, staggers, hover lifts.
-//  2. Signature scroll effects (opt-in, use SPARINGLY) — parallaxY, clipReveal.
-//     At most one signature moment per section; they are a standout, not a default.
+// Motion budget is per PAGE, not per section (decision 26): at most two sections on a
+// page may own a signature moment, enforced by console/test/page-rhythm.test.mjs.
+// Micro-reveals are free and do not count.
 //
-// All effects must no-op under the `quiet` skin / prefers-reduced-motion via
-// stillFor(). See DESIGN-LANGUAGE.md for when each move applies.
+// Two tiers:
+//  1. Micro-interactions (default, use freely): reveals, staggers, hover lifts.
+//  2. Signature scroll effects (opt-in, use SPARINGLY): clipReveal. parallaxY is
+//     deprecated and cut by decision 28 (ornamental); see its JSDoc below.
+//
+// All effects must no-op under prefers-reduced-motion via stillFor(). See
+// DESIGN-LANGUAGE.md for when each move applies.
 import { useScroll, useTransform, type MotionValue, type Variants } from 'framer-motion';
 import type { RefObject } from 'react';
 import type { SkinId } from './skins';
@@ -51,8 +55,12 @@ export function stillFor(skin: SkinId, reduce: boolean): boolean {
 /**
  * Scroll-linked vertical parallax for a section's feature imagery.
  * Returns a MotionValue<string> to spread onto `style={{ y }}`. Pass `still` to
- * opt out (returns a static value the caller can ignore). Keep the range gentle —
- * this is depth, not motion sickness.
+ * opt out (returns a static value the caller can ignore).
+ *
+ * @deprecated Cut by decision 28 (ornamental). Retained so an already-exported client repo keeps
+ * compiling: verifyCatalogImports reads this module's exports, and removing a symbol a shipped
+ * component imports is exactly the parallaxY failure this file's history records. Do not use in
+ * new components.
  *
  * @example
  *   const ref = useRef<HTMLElement>(null);
