@@ -35,7 +35,11 @@ export const SKINS: Record<string, SkinDef[]> = {
   // trust
   TrustReviewsAggregate: [DEF, SOFT], ServiceArea: [SOFT, DEF, INV],
   // about
-  AboutFeature: [DEF, SOFT, INV], AboutStory: [DEF, SOFT],
+  AboutFeature: [DEF, SOFT, INV], AboutStory: [DEF, SOFT], AboutSticky: [DEF, SOFT],
+  // differentiators (new category, reads about.pillars)
+  DifferentiatorsIndex: [DEF, SOFT], DifferentiatorsPanels: [SOFT, DEF, INV], DifferentiatorsRail: [DEF, SOFT],
+  // stats (new category, reads about.stats)
+  StatsBand: [INV, DEF], StatsLedger: [DEF, SOFT],
   // services
   ServicesGrid: [SOFT, DEF], ServicesShowcase: [DEF, SOFT], ServicesSpotlight: [SOFT, DEF, INV],
   // work (reframed as recent jobs)
@@ -44,7 +48,7 @@ export const SKINS: Record<string, SkinDef[]> = {
   // testimonials
   TestimonialsGrid: [SOFT, DEF], TestimonialsMarquee: [SOFT, DEF],
   // faq
-  FaqAccordion: [DEF, SOFT, INV], FaqStickyAside: [SOFT, DEF],
+  FaqAccordion: [DEF, SOFT, INV], FaqStickyAside: [SOFT, DEF], FaqIndex: [DEF, SOFT, INV],
   // finalCta
   FinalCtaSplit: [DEF, SOFT],
   // contact
