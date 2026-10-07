@@ -37,11 +37,12 @@ export const SKINS: Record<string, SkinDef[]> = {
   // about
   AboutFeature: [DEF, SOFT, INV], AboutStory: [DEF, SOFT],
   // services
-  ServicesGrid: [SOFT, DEF],
+  ServicesGrid: [SOFT, DEF], ServicesShowcase: [DEF, SOFT], ServicesSpotlight: [SOFT, DEF, INV],
   // work (reframed as recent jobs)
   BeforeAfter: [DEF, SOFT, INV], RecentJobsGrid: [DEF, SOFT],
+  WorkSpotlight: [DEF, INV], WorkMasonry: [DEF, SOFT],
   // testimonials
-  TestimonialsGrid: [SOFT, DEF],
+  TestimonialsGrid: [SOFT, DEF], TestimonialsMarquee: [SOFT, DEF],
   // faq
   FaqAccordion: [DEF, SOFT, INV], FaqStickyAside: [SOFT, DEF],
   // finalCta
