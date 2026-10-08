@@ -16,9 +16,14 @@
 // through untouched and simply gets no srcset — degrading to current behaviour rather than
 // producing a broken URL. Do not add a host here on the assumption it supports `?w=`.
 
-/** Widths worth generating for a hero-scale image. Wider than the CSS box on purpose: a 2x
- *  phone at 390px CSS is asking for ~780 real pixels. */
-const WIDTHS = [480, 640, 828, 1080, 1280, 1600];
+/** The widths the Phase 11 export pipeline emits for every localized image. KEEP IN LOCKSTEP with
+ *  console/src/lib/image-pipeline.ts's WIDTHS: a width named in a srcSet here that the pipeline
+ *  never wrote is a 404 on a live client site. (Also used for origin-resize hosts below.) */
+const WIDTHS = [640, 1024, 1536, 2048];
+
+/** A localized asset emitted by the export pipeline: `/img/<hash>`, no width and no extension. The
+ *  pipeline wrote `<hash>-<w>.webp` (and, for the hero, `<hash>-<w>.avif`) next to it. */
+const isLocalAsset = (url: string): boolean => url.startsWith('/img/') && !/\.[a-z0-9]+$/i.test(url);
 
 type Rewriter = (url: URL, w: number) => string;
 
@@ -47,6 +52,14 @@ export type ResponsiveImage = { src: string; srcSet?: string };
  */
 export function responsiveImage(url: string): ResponsiveImage {
   if (!url) return { src: url };
+  // Localized export asset: expand `/img/<hash>` to the WebP widths the pipeline emitted. Checked
+  // before the URL parse because this is a root-relative path, not an absolute URL.
+  if (isLocalAsset(url)) {
+    return {
+      src: `${url}-1024.webp`,
+      srcSet: WIDTHS.map((w) => `${url}-${w}.webp ${w}w`).join(', '),
+    };
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -59,5 +72,30 @@ export function responsiveImage(url: string): ResponsiveImage {
   return {
     src: url,
     srcSet: WIDTHS.map((w) => `${host.rewrite(parsed, w)} ${w}w`).join(', '),
+  };
+}
+
+/**
+ * A <picture>-shaped result for a component that wants real per-format <source> elements. Only
+ * meaningful for a LOCALIZED asset (`/img/<hash>`), where the pipeline wrote actual `.webp` (and,
+ * for the hero, `.avif`) files. `avifSrcSet` is present ONLY when `opts.avif` is set AND the asset
+ * is local: the export pipeline emits AVIF for the HERO slot alone (decision 44), because egress
+ * is not the constraint on Vercel Pro but export duration is, and AVIF encode is the slow step. A
+ * caller that gets `avifSrcSet: undefined` must emit no <source type="image/avif"> at all, or it
+ * points the browser at files that were never written.
+ *
+ * For a non-local URL (the console preview on an origin URL) both srcSets are undefined and only
+ * `src` is returned: the caller should fall back to responsiveImage for a plain <img srcSet>,
+ * because an origin URL's bytes are format-negotiated and would lie inside a typed <source>.
+ */
+export function responsivePicture(
+  url: string,
+  opts?: { avif?: boolean },
+): { avifSrcSet?: string; webpSrcSet?: string; src: string } {
+  if (!url || !isLocalAsset(url)) return { src: url };
+  return {
+    src: `${url}-1024.webp`,
+    webpSrcSet: WIDTHS.map((w) => `${url}-${w}.webp ${w}w`).join(', '),
+    avifSrcSet: opts?.avif ? WIDTHS.map((w) => `${url}-${w}.avif ${w}w`).join(', ') : undefined,
   };
 }
