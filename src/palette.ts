@@ -15,6 +15,7 @@ export type BrandLike = {
   palette: {
     accent: string;
     accentFg?: string | null;
+    accent2?: string | null;
     bg: string;
     bgSoft: string;
     ink: string;
@@ -70,6 +71,15 @@ export function paletteVars(brand: BrandLike): CSSProperties {
      17.10:1 on the warm ink, against pure white's ~18:1). */
   const rampTarget = dark ? bg : WARM_PAPER;
 
+  // Secondary/structural accent — the cool half of the two-tone model (steel/navy), used for
+  // the accent-bar motif, dividers and depth. Authored in the schema (derivePalette seeds it
+  // from the ink hue; a client can pin it). Falls back to a steel mix of ink↔bg for any
+  // palette authored before accent2 existed, so a legacy client re-exports with a coherent bar
+  // rather than a missing one.
+  const accent2 = p.accent2?.trim() || mix(ink, bg, 0.5);
+  const accent2Deep = shade(accent2, 0.3);
+  const accent2Light = mix(accent2, rampTarget, 0.55);
+
   return {
     // ── authored tokens (unchanged) ──
     '--accent': accent,
@@ -116,6 +126,16 @@ export function paletteVars(brand: BrandLike): CSSProperties {
     '--accent-200': mix(accent, rampTarget, 0.68),
     '--accent-strong': accentStrong,
     '--accent-glow': withAlpha(accent, 0.32),
+    // ── secondary (structural) accent + the two-tone accent-bar motif ──
+    // `--accent-bar` is the gradient the catalog's AccentBar primitive and section dividers
+    // read; `--accent-2-soft` is the tinted ground for icon tiles and quiet panels. Both
+    // recompute here, so a per-section accent2 override (sectionVars re-runs paletteVars)
+    // recolors every bar and tile in that section with no component change.
+    '--accent-2': accent2,
+    '--accent-2-fg': readableOn(accent2, isDarkHex(ink) ? ink : WARM_INK),
+    '--accent-2-soft': mix(accent2, rampTarget, 0.84),
+    '--accent-2-strong': accent2Deep,
+    '--accent-bar': `linear-gradient(90deg, ${accent2Light} 0%, ${accent2} 55%, ${accent2Deep} 100%)`,
     // DEPRECATED by decision 30(b). Still derived so shipped repos keep rendering; no new component may use it.
     '--accent-grad': `linear-gradient(135deg, ${accent} 0%, ${accentStrong} 100%)`,
     // ── on-brand dark ("contrast" skin) section tones ──
