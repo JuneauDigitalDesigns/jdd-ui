@@ -50,6 +50,7 @@ export function LeadForm({
   mode = 'phone',
   submitLabel,
   withMessage = false,
+  initialMessage = '',
   surface = 'light',
   layout = 'stack',
   className = '',
@@ -57,6 +58,12 @@ export function LeadForm({
   mode?: LeadMode;
   submitLabel: ReactNode;
   withMessage?: boolean;
+  /** Seeds the optional message field (only rendered when `withMessage` is true) — e.g. a
+   *  vertical template pre-filling what the visitor picked on a previous step (lawn-care's
+   *  mow-frequency selector) so they don't have to re-type it. Stays fully editable: this only
+   *  sets the initial value, same contract as an <input defaultValue>. Defaults to `''` so
+   *  every existing call site is byte-for-byte unaffected. */
+  initialMessage?: string;
   /** `dark` restyles the controls for an inverted section. */
   surface?: 'light' | 'dark';
   /** `row` lays the fields out horizontally from sm up; `stack` keeps one column. */
@@ -68,7 +75,7 @@ export function LeadForm({
   const uid = useId();
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState(initialMessage);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Status>('idle');
 
