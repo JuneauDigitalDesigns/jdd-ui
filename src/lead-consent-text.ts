@@ -38,9 +38,12 @@
 export const LEAD_SMS_CONSENT_VERSION = 'lead-sms-consent-v1';
 
 /**
- * ⚠️ DRAFT — carrier-reviewable copy, pending operator approval (2026-11-02).
- * Approving a different sentence means editing this constant and bumping the
- * version above in the same commit.
+ * Approved by the operator 2026-11-02, shipped as v1.3.0.
+ *
+ * Carrier-reviewable copy: it is not the operator's to change casually and not an
+ * engineer's to change at all. Editing this sentence means bumping the version
+ * above in the same commit and cutting a new @jdd/ui tag, or every consent record
+ * written before the edit stops matching the words it claims were shown.
  */
 export const LEAD_SMS_CONSENT_TEXT =
   'By giving us your number you agree we may text you about your enquiry. ' +
