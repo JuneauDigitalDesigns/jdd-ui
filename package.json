@@ -19,7 +19,8 @@
     "src"
   ],
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --import ./test/ts-transpile-register.mjs --test \"test/*.test.mjs\""
   },
   "peerDependencies": {
     "@phosphor-icons/react": ">=2",

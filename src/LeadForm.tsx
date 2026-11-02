@@ -69,6 +69,89 @@ function looksLikePhone(v: string): boolean {
   return (v.match(/\d/g) ?? []).length >= 7;
 }
 
+/* ─── the three consent invariants, lifted out so they can be tested ───────────
+ * These were inline in the component until v1.3.0. A component's internals are
+ * only reachable from a test through a rendered DOM, and the two cases that matter
+ * most here — a field that is invalid *and* has a disclosure, and what gets posted
+ * when no disclosure was shown — are not in the initial render. A test that cannot
+ * reach them is decoration, so the decisions live here as pure functions instead.
+ * They are exported for that reason; nothing outside this file needs them.
+ * ─────────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Whether this form says anything about texting — the hinge the whole safety
+ * property hangs on.
+ *
+ * Both the rendered disclosure and the posted hash are gated on this one call, so
+ * a build cannot evidence words it never showed. `email` mode collects no number:
+ * the sentence would describe a field that is not on screen, and the consent
+ * object would assert permission for a number nobody gave.
+ */
+export function showsSmsDisclosure(mode: LeadMode): boolean {
+  return mode === 'phone';
+}
+
+/* Element ids, derived in one place. `contactDescribedBy` names these ids and the
+ * elements carrying them are rendered elsewhere in this file; if the two spellings
+ * drift, aria-describedby points at nothing and nothing visibly breaks. */
+export const consentElementId = (uid: string) => `${uid}-consent`;
+export const contactErrorId = (uid: string) => `${uid}-contact-err`;
+
+/**
+ * The ids describing the contact input, error first so the more urgent is
+ * announced first.
+ *
+ * The regression this exists to catch: wiring the disclosure in by *replacing*
+ * `aria-describedby` rather than appending to it, which silently re-introduces
+ * bug 3 from the header comment — an invalid field with no error tied to it. In
+ * checkbox mode the text is the checkbox's own <label> and is announced there, so
+ * describing the input with it as well would read it out twice.
+ */
+export function contactDescribedBy(args: {
+  uid: string;
+  showContactErr: boolean;
+  showsDisclosure: boolean;
+  consentMode: LeadConsentMode;
+}): string | undefined {
+  const { uid, showContactErr, showsDisclosure, consentMode } = args;
+  return (
+    [
+      showContactErr ? contactErrorId(uid) : null,
+      showsDisclosure && consentMode === 'notice' ? consentElementId(uid) : null,
+    ]
+      .filter(Boolean)
+      .join(' ') || undefined
+  );
+}
+
+/**
+ * The consent object for one submission, or null when there is nothing to evidence.
+ *
+ * Shape fixed by agreement with jdd-ops/PLAN-portal-form-capture.md §3. Takes the
+ * same boolean that decides whether the words render, so the two cannot be changed
+ * apart.
+ */
+export async function captureLeadConsent(showsDisclosure: boolean): Promise<LeadConsent | null> {
+  if (!showsDisclosure) return null;
+  try {
+    return {
+      basis: 'web-form',
+      textHash: await hashLeadSmsConsentText(LEAD_SMS_CONSENT_TEXT),
+      textVersion: LEAD_SMS_CONSENT_VERSION,
+      // Client clock, for diagnostics only — the server re-stamps authoritatively,
+      // because a time the submitter controls is not evidence of when they consented.
+      capturedAt: new Date().toISOString(),
+    };
+  } catch {
+    // crypto.subtle is secure-context-only (see hashLeadSmsConsentText). Dropping the
+    // lead over an unhashable string would be the worse trade by a distance, so post it
+    // without the object: the portal's gate fails closed, captures the lead, and tells
+    // the owner why they cannot text it. A placeholder hash would instead claim
+    // evidence that does not exist.
+    return null;
+  }
+}
+
 export function LeadForm({
   mode = 'phone',
   submitLabel,
@@ -120,14 +203,10 @@ export function LeadForm({
   const contactValid = mode === 'email' ? looksLikeEmail(contact) : looksLikePhone(contact);
   const nameValid = name.trim().length > 0;
 
-  // Only a form that actually collects a phone number can say anything true about texting
-  // it. In `email` mode there is no number: the disclosure would be describing a field that
-  // is not on screen, and a consent object would be asserting permission for a number that
-  // was never given. Such a lead reaches the portal with no consent and is correctly shown
-  // as unmessageable — there is nothing to message.
-  const showsDisclosure = mode === 'phone';
+  // One call gates both the rendered words and the posted hash — see showsSmsDisclosure.
+  const showsDisclosure = showsSmsDisclosure(mode);
   const consentValid = !(showsDisclosure && consentMode === 'checkbox') || consentChecked;
-  const disclosureId = `${uid}-consent`;
+  const disclosureId = consentElementId(uid);
 
   const showNameErr = touched.name && !nameValid;
   const showContactErr = touched.contact && !contactValid;
@@ -177,41 +256,13 @@ export function LeadForm({
     </p>
   );
 
-  /**
-   * The consent object for this submission, or null when there is nothing to evidence.
-   *
-   * Gated on `showsDisclosure` and not on `mode` directly: whatever decides that the words
-   * appear on screen is the same expression that decides a hash of them is posted, so the
-   * two cannot be changed apart. Shape is fixed by PLAN-portal-form-capture.md §3.
-   */
-  async function capturedConsent(): Promise<LeadConsent | null> {
-    if (!showsDisclosure) return null;
-    try {
-      return {
-        basis: 'web-form',
-        textHash: await hashLeadSmsConsentText(LEAD_SMS_CONSENT_TEXT),
-        textVersion: LEAD_SMS_CONSENT_VERSION,
-        // Client clock, for diagnostics only — the server re-stamps authoritatively,
-        // because a time the submitter controls is not evidence of when they consented.
-        capturedAt: new Date().toISOString(),
-      };
-    } catch {
-      // crypto.subtle is secure-context-only (see hashLeadSmsConsentText). Dropping the
-      // lead over an unhashable string would be the worse trade by a distance, so post it
-      // without the object: the portal's gate fails closed, captures the lead, and tells
-      // the owner why they cannot text it. A placeholder hash would instead claim evidence
-      // that does not exist.
-      return null;
-    }
-  }
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setTouched({ name: true, contact: true, consent: true });
     if (!nameValid || !contactValid || !consentValid) return;
     setStatus('loading');
     try {
-      const consent = await capturedConsent();
+      const consent = await captureLeadConsent(showsDisclosure);
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -279,23 +330,16 @@ export function LeadForm({
             onChange={(e) => setContact(e.target.value)}
             onBlur={() => setTouched((t) => ({ ...t, contact: true }))}
             aria-invalid={showContactErr || undefined}
-            // Both ids, error first so the more urgent one is announced first. Replacing
-            // this with the disclosure id alone is the regression to watch for: a field
-            // that is invalid and says nothing about it is bug 3 from the header comment.
-            // In checkbox mode the text is the checkbox's own <label> and is announced
-            // there, so describing the input with it as well would read it out twice.
-            aria-describedby={
-              [
-                showContactErr ? `${uid}-contact-err` : null,
-                showsDisclosure && consentMode === 'notice' ? disclosureId : null,
-              ]
-                .filter(Boolean)
-                .join(' ') || undefined
-            }
+            aria-describedby={contactDescribedBy({
+              uid,
+              showContactErr,
+              showsDisclosure,
+              consentMode,
+            })}
             className={`${field} ${showContactErr ? errField : ''}`}
           />
           {showContactErr && (
-            <span id={`${uid}-contact-err`} className={errCls}>
+            <span id={contactErrorId(uid)} className={errCls}>
               {mode === 'email' ? 'That email address does not look right.' : 'Please enter a number we can reach you on.'}
             </span>
           )}
