@@ -24,4 +24,5 @@ export * from './motion';
 export * from './icons';
 export * from './img';
 export * from './merge';
+export * from './lead-consent-text';
 export * from './LeadForm';

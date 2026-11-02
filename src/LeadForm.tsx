@@ -29,10 +29,33 @@
 // serve both plans, and is why the seven `*Starter` duplicates could be deleted.
 // /api/contact builds its owner email from whatever fields are posted, so adding
 // a field here needs no route change.
+//
+// SMS CONSENT
+// The disclosure under the phone field is the only record that the customer was
+// ever told they could be texted, and `consent.textHash` in the POST body is the
+// evidence of it. Both come from one constant in ./lead-consent-text — the
+// rendered copy is never retyped as JSX, or it drifts from the hashed copy one
+// careless edit at a time. Two rules that are easy to break from in here:
+//
+//   1. Never post a `consent` object unless the disclosure actually rendered.
+//      A hash of words nobody saw is manufactured evidence, and that is worse
+//      than none: the portal's gate fails closed on a missing object and shows
+//      the owner the reason, which is a recoverable state. A false hash is not.
+//   2. The disclosure is wired to the phone input with `aria-describedby`, not
+//      left as a loose <p>. In notice mode it is the only thing that tells a
+//      screen-reader user what giving the number means, and a sibling paragraph
+//      next to an input is never announced with it.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useId, useState, type ReactNode } from 'react';
+import {
+  LEAD_SMS_CONSENT_TEXT,
+  LEAD_SMS_CONSENT_VERSION,
+  hashLeadSmsConsentText,
+  type LeadConsent,
+} from './lead-consent-text';
 
 export type LeadMode = 'phone' | 'email';
+export type LeadConsentMode = 'notice' | 'checkbox';
 type Status = 'idle' | 'loading' | 'done' | 'error';
 
 /** Loose on purpose. The server normalises and is the real authority; this only catches
@@ -51,6 +74,7 @@ export function LeadForm({
   submitLabel,
   withMessage = false,
   initialMessage = '',
+  consentMode = 'notice',
   surface = 'light',
   layout = 'stack',
   className = '',
@@ -64,6 +88,16 @@ export function LeadForm({
    *  sets the initial value, same contract as an <input defaultValue>. Defaults to `''` so
    *  every existing call site is byte-for-byte unaffected. */
   initialMessage?: string;
+  /** How the SMS disclosure is presented (phone mode only — see `showsDisclosure` below).
+   *
+   *  `notice` is the default and the operator's working decision: this is a transactional
+   *  reply to an enquiry the customer opened, so clear notice is the proportionate
+   *  disclosure, and the hash is the evidence. `checkbox` is stronger evidence — an
+   *  affirmative act, blocking submission until ticked — at the cost of friction on the one
+   *  element on the page that makes money. It is a prop rather than a rewrite precisely so
+   *  that trade can be revisited per site without touching this logic; either value posts
+   *  the same `consent` shape. */
+  consentMode?: LeadConsentMode;
   /** `dark` restyles the controls for an inverted section. */
   surface?: 'light' | 'dark';
   /** `row` lays the fields out horizontally from sm up; `stack` keeps one column. */
@@ -76,6 +110,9 @@ export function LeadForm({
   const [name, setName] = useState('');
   const [contact, setContact] = useState('');
   const [message, setMessage] = useState(initialMessage);
+  // Never defaults to true. A pre-ticked box is not an affirmative act and is worth less as
+  // evidence than the plain notice it would be replacing.
+  const [consentChecked, setConsentChecked] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Status>('idle');
 
@@ -83,8 +120,18 @@ export function LeadForm({
   const contactValid = mode === 'email' ? looksLikeEmail(contact) : looksLikePhone(contact);
   const nameValid = name.trim().length > 0;
 
+  // Only a form that actually collects a phone number can say anything true about texting
+  // it. In `email` mode there is no number: the disclosure would be describing a field that
+  // is not on screen, and a consent object would be asserting permission for a number that
+  // was never given. Such a lead reaches the portal with no consent and is correctly shown
+  // as unmessageable — there is nothing to message.
+  const showsDisclosure = mode === 'phone';
+  const consentValid = !(showsDisclosure && consentMode === 'checkbox') || consentChecked;
+  const disclosureId = `${uid}-consent`;
+
   const showNameErr = touched.name && !nameValid;
   const showContactErr = touched.contact && !contactValid;
+  const showConsentErr = touched.consent && !consentValid;
 
   const dark = surface === 'dark';
   const field = [
@@ -98,13 +145,73 @@ export function LeadForm({
   const errField = dark ? 'border-red-300' : 'border-urgent';
   const labelCls = `mb-1.5 block text-[13.5px] font-bold ${dark ? 'text-onInk' : 'text-ink'}`;
   const errCls = `mt-1 block text-[13px] font-semibold ${dark ? 'text-red-200' : 'text-urgent'}`;
+  const disclosureCls = `text-[13px] leading-snug ${dark ? 'text-onInkSoft' : 'text-inkSoft'}`;
+
+  // Always rendered when a number is collected: not a tooltip, not a <details>, not a link
+  // to a policy. Someone who never opens it has not been told anything.
+  const disclosure = !showsDisclosure ? null : consentMode === 'checkbox' ? (
+    <div>
+      <label htmlFor={disclosureId} className={`flex items-start gap-2.5 ${disclosureCls}`}>
+        <input
+          id={disclosureId}
+          name="smsConsent"
+          type="checkbox"
+          checked={consentChecked}
+          onChange={(e) => setConsentChecked(e.target.checked)}
+          onBlur={() => setTouched((t) => ({ ...t, consent: true }))}
+          aria-invalid={showConsentErr || undefined}
+          aria-describedby={showConsentErr ? `${disclosureId}-err` : undefined}
+          className="mt-px size-4 shrink-0 accent-accent"
+        />
+        <span>{LEAD_SMS_CONSENT_TEXT}</span>
+      </label>
+      {showConsentErr && (
+        <span id={`${disclosureId}-err`} className={errCls}>
+          Please tick this so we can text you back.
+        </span>
+      )}
+    </div>
+  ) : (
+    <p id={disclosureId} className={disclosureCls}>
+      {LEAD_SMS_CONSENT_TEXT}
+    </p>
+  );
+
+  /**
+   * The consent object for this submission, or null when there is nothing to evidence.
+   *
+   * Gated on `showsDisclosure` and not on `mode` directly: whatever decides that the words
+   * appear on screen is the same expression that decides a hash of them is posted, so the
+   * two cannot be changed apart. Shape is fixed by PLAN-portal-form-capture.md §3.
+   */
+  async function capturedConsent(): Promise<LeadConsent | null> {
+    if (!showsDisclosure) return null;
+    try {
+      return {
+        basis: 'web-form',
+        textHash: await hashLeadSmsConsentText(LEAD_SMS_CONSENT_TEXT),
+        textVersion: LEAD_SMS_CONSENT_VERSION,
+        // Client clock, for diagnostics only — the server re-stamps authoritatively,
+        // because a time the submitter controls is not evidence of when they consented.
+        capturedAt: new Date().toISOString(),
+      };
+    } catch {
+      // crypto.subtle is secure-context-only (see hashLeadSmsConsentText). Dropping the
+      // lead over an unhashable string would be the worse trade by a distance, so post it
+      // without the object: the portal's gate fails closed, captures the lead, and tells
+      // the owner why they cannot text it. A placeholder hash would instead claim evidence
+      // that does not exist.
+      return null;
+    }
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setTouched({ name: true, contact: true });
-    if (!nameValid || !contactValid) return;
+    setTouched({ name: true, contact: true, consent: true });
+    if (!nameValid || !contactValid || !consentValid) return;
     setStatus('loading');
     try {
+      const consent = await capturedConsent();
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -112,6 +219,7 @@ export function LeadForm({
           name,
           [mode]: contact,
           ...(withMessage && message.trim() ? { message } : {}),
+          ...(consent ? { consent } : {}),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -171,7 +279,19 @@ export function LeadForm({
             onChange={(e) => setContact(e.target.value)}
             onBlur={() => setTouched((t) => ({ ...t, contact: true }))}
             aria-invalid={showContactErr || undefined}
-            aria-describedby={showContactErr ? `${uid}-contact-err` : undefined}
+            // Both ids, error first so the more urgent one is announced first. Replacing
+            // this with the disclosure id alone is the regression to watch for: a field
+            // that is invalid and says nothing about it is bug 3 from the header comment.
+            // In checkbox mode the text is the checkbox's own <label> and is announced
+            // there, so describing the input with it as well would read it out twice.
+            aria-describedby={
+              [
+                showContactErr ? `${uid}-contact-err` : null,
+                showsDisclosure && consentMode === 'notice' ? disclosureId : null,
+              ]
+                .filter(Boolean)
+                .join(' ') || undefined
+            }
             className={`${field} ${showContactErr ? errField : ''}`}
           />
           {showContactErr && (
@@ -179,6 +299,11 @@ export function LeadForm({
               {mode === 'email' ? 'That email address does not look right.' : 'Please enter a number we can reach you on.'}
             </span>
           )}
+          {/* Directly under the phone input in `stack`. In `row` the three fields share one
+              line, so three sentences in a flex-1 column would wrap into a tower and drag
+              the row's height with it — there it renders full-width below the row instead,
+              which is still immediately below the phone field it describes. */}
+          {layout === 'stack' && disclosure && <div className="mt-2">{disclosure}</div>}
         </div>
 
         <button
@@ -191,6 +316,8 @@ export function LeadForm({
           {status === 'loading' ? 'Sending…' : submitLabel}
         </button>
       </div>
+
+      {layout === 'row' && disclosure && <div className="mt-2.5">{disclosure}</div>}
 
       {withMessage && (
         <div className="mt-3">
