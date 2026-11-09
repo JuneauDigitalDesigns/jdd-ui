@@ -45,14 +45,27 @@
 //      left as a loose <p>. In notice mode it is the only thing that tells a
 //      screen-reader user what giving the number means, and a sibling paragraph
 //      next to an input is never announced with it.
+//
+// CALL CONSENT
+// A phone-mode form is one the AI receptionist will call back, so it carries a
+// required, unticked box naming the business and the AI voice. `callConsent` is
+// posted only when the box was ticked. /api/contact checks it again and won't
+// dial without it, so this is the first gate, not the only one.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useId, useState, type ReactNode } from 'react';
 import {
+  LEAD_CALL_CONSENT_VERSION,
   LEAD_SMS_CONSENT_TEXT,
   LEAD_SMS_CONSENT_VERSION,
+  hashLeadCallConsentText,
   hashLeadSmsConsentText,
+  leadCallConsentText,
+  type LeadCallConsent,
   type LeadConsent,
 } from './lead-consent-text';
+
+// This package has no Node types, and needs only the one variable Next inlines.
+declare const process: { env: { NEXT_PUBLIC_BRAND_NAME?: string } };
 
 export type LeadMode = 'phone' | 'email';
 export type LeadConsentMode = 'notice' | 'checkbox';
@@ -152,6 +165,46 @@ export async function captureLeadConsent(showsDisclosure: boolean): Promise<Lead
   }
 }
 
+/**
+ * Whether this form promises an AI callback, and so needs the box.
+ *
+ * `LEAD_CALLBACK` never reaches the browser. The plan does, through `mode`: every catalog form
+ * passes `email` for Starter (web-only is a Starter) and `phone` otherwise.
+ */
+export function showsCallConsent(mode: LeadMode): boolean {
+  return mode === 'phone';
+}
+
+/** Written out in full because Next inlines this exact expression at build. */
+export function callConsentBusinessName(): string {
+  return process.env.NEXT_PUBLIC_BRAND_NAME?.trim() ?? '';
+}
+
+/**
+ * The call-consent record for one submission, or null unless the box was ticked.
+ *
+ * Takes the same text that rendered, so the hash covers the words on screen. Null when it can't
+ * be hashed: the lead still posts, and /api/contact sends it to the inbox rather than dialing.
+ */
+export async function captureLeadCallConsent(
+  ticked: boolean,
+  text: string,
+): Promise<LeadCallConsent | null> {
+  if (!ticked) return null;
+  try {
+    const loc = globalThis.location;
+    return {
+      basis: 'web-form-checkbox',
+      textHash: await hashLeadCallConsentText(text),
+      textVersion: LEAD_CALL_CONSENT_VERSION,
+      capturedAt: new Date().toISOString(),
+      pageUrl: loc ? `${loc.origin}${loc.pathname}` : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function LeadForm({
   mode = 'phone',
   submitLabel,
@@ -196,6 +249,7 @@ export function LeadForm({
   // Never defaults to true. A pre-ticked box is not an affirmative act and is worth less as
   // evidence than the plain notice it would be replacing.
   const [consentChecked, setConsentChecked] = useState(false);
+  const [callConsentChecked, setCallConsentChecked] = useState(false);
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Status>('idle');
 
@@ -208,9 +262,15 @@ export function LeadForm({
   const consentValid = !(showsDisclosure && consentMode === 'checkbox') || consentChecked;
   const disclosureId = consentElementId(uid);
 
+  const needsCallConsent = showsCallConsent(mode);
+  const callConsentValid = !needsCallConsent || callConsentChecked;
+  const callConsentId = `${uid}-call-consent`;
+  const callConsentText = leadCallConsentText(callConsentBusinessName());
+
   const showNameErr = touched.name && !nameValid;
   const showContactErr = touched.contact && !contactValid;
   const showConsentErr = touched.consent && !consentValid;
+  const showCallConsentErr = touched.callConsent && !callConsentValid;
 
   const dark = surface === 'dark';
   const field = [
@@ -256,13 +316,46 @@ export function LeadForm({
     </p>
   );
 
+  // Full-strength text rather than the muted disclosure colour: this one has to be conspicuous.
+  const callConsentBox = !needsCallConsent ? null : (
+    <div>
+      <label
+        htmlFor={callConsentId}
+        className={`flex items-start gap-2.5 text-[13.5px] leading-snug ${dark ? 'text-onInk' : 'text-ink'}`}
+      >
+        <input
+          id={callConsentId}
+          name="callConsent"
+          type="checkbox"
+          required
+          checked={callConsentChecked}
+          onChange={(e) => setCallConsentChecked(e.target.checked)}
+          onBlur={() => setTouched((t) => ({ ...t, callConsent: true }))}
+          aria-invalid={showCallConsentErr || undefined}
+          aria-describedby={showCallConsentErr ? `${callConsentId}-err` : undefined}
+          className="mt-px size-4 shrink-0 accent-accent"
+        />
+        <span>{callConsentText}</span>
+      </label>
+      {showCallConsentErr && (
+        <span id={`${callConsentId}-err`} className={errCls}>
+          Please tick this box so we can call you back.
+        </span>
+      )}
+    </div>
+  );
+
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setTouched({ name: true, contact: true, consent: true });
-    if (!nameValid || !contactValid || !consentValid) return;
+    setTouched({ name: true, contact: true, consent: true, callConsent: true });
+    if (!nameValid || !contactValid || !consentValid || !callConsentValid) return;
     setStatus('loading');
     try {
       const consent = await captureLeadConsent(showsDisclosure);
+      const callConsent = await captureLeadCallConsent(
+        needsCallConsent && callConsentChecked,
+        callConsentText,
+      );
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -271,6 +364,7 @@ export function LeadForm({
           [mode]: contact,
           ...(withMessage && message.trim() ? { message } : {}),
           ...(consent ? { consent } : {}),
+          ...(callConsent ? { callConsent } : {}),
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
@@ -348,6 +442,7 @@ export function LeadForm({
               the row's height with it — there it renders full-width below the row instead,
               which is still immediately below the phone field it describes. */}
           {layout === 'stack' && disclosure && <div className="mt-2">{disclosure}</div>}
+          {layout === 'stack' && callConsentBox && <div className="mt-2.5">{callConsentBox}</div>}
         </div>
 
         <button
@@ -362,6 +457,7 @@ export function LeadForm({
       </div>
 
       {layout === 'row' && disclosure && <div className="mt-2.5">{disclosure}</div>}
+      {layout === 'row' && callConsentBox && <div className="mt-2.5">{callConsentBox}</div>}
 
       {withMessage && (
         <div className="mt-3">

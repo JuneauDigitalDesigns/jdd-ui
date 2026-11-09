@@ -90,6 +90,61 @@ export async function hashLeadSmsConsentText(
     .join('');
 }
 
+/* ─── consent to the AI callback ───────────────────────────────────────────────
+ * Separate from the SMS notice above: a different act (a required tick, not notice), a
+ * different risk (the FCC treats an AI voice as artificial under the TCPA, which requires
+ * prior consent), and a different record. The SMS wording and its hash are untouched.
+ * ─────────────────────────────────────────────────────────────────────────────── */
+
+export const LEAD_CALL_CONSENT_VERSION = 'lead-call-consent-v1';
+
+/**
+ * Approved word for word by the operator 2026-11-09, naming the client's business. A lawyer
+ * has not reviewed it yet. Same rule as the SMS text: a wording change means a new version
+ * and a new @jdd/ui tag.
+ *
+ * jdd-ops/lib/site-routes/contact.route.ts keeps a standalone copy keyed by this version,
+ * because it re-derives the hash before it will dial. Add the new version there too.
+ */
+export const LEAD_CALL_CONSENT_TEMPLATE =
+  'I agree that {business} may call me back at the number I entered, about this request, ' +
+  'using an automated system and an AI-generated voice. The call may be recorded. ' +
+  "I don't have to agree in order to buy anything, and I can phone instead.";
+
+/**
+ * The exact words on screen for one business.
+ *
+ * The fallback only ever shows where no brand is set, which is the console's preview. A live
+ * site built without a brand cannot place a callback: /api/contact refuses a consent that
+ * doesn't name the business.
+ *
+ * A replacer function, not a string: `$&` in a brand name would otherwise be read as a
+ * replacement pattern and the words on screen would stop matching the words the server hashes.
+ */
+export function leadCallConsentText(businessName: string): string {
+  const name = canonicalizeConsentText(businessName) || 'this business';
+  return canonicalizeConsentText(LEAD_CALL_CONSENT_TEMPLATE.replace('{business}', () => name));
+}
+
+/** SHA-256 of the rendered wording, lowercase hex. Throws outside a secure context. */
+export async function hashLeadCallConsentText(text: string): Promise<string> {
+  return hashLeadSmsConsentText(text);
+}
+
+/**
+ * Proof of the tick, posted as `callConsent`, beside the SMS `consent` object and never merged
+ * with it: that object's four keys are a published contract with the portal.
+ */
+export interface LeadCallConsent {
+  basis: 'web-form-checkbox';
+  textHash: string;
+  textVersion: string;
+  /** Client clock, for diagnostics. The agency stamps the authoritative time. */
+  capturedAt: string;
+  /** Origin and path only. A query string can carry things that shouldn't be kept for years. */
+  pageUrl: string;
+}
+
 /**
  * The consent object posted with a lead.
  *
