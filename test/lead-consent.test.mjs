@@ -272,6 +272,14 @@ test('a callback form shows the box, unticked, with a real label', () => {
   }
 });
 
+test('the consent box is styled inline, because client sites do not generate classes from this package', () => {
+  // On the growth fixture's real build, size-4 and accent-accent came out of Tailwind as nothing.
+  const html = render({ mode: 'phone' });
+  const input = html.match(/<input id="[^"]*-call-consent"[^>]*>/)[0];
+  assert.match(input, /style="[^"]*width:16px/);
+  assert.doesNotMatch(input, /class=/);
+});
+
 test('an email-mode (Starter or web-only) form has no box and no call wording', () => {
   assert.equal(showsCallConsent('email'), false);
   assert.equal(showsCallConsent('phone'), true);

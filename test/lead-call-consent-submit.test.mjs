@@ -114,3 +114,84 @@ test('a Starter or web-only form submits as before, with no box and no call cons
   assert.equal(posts.length, 1);
   assert.deepEqual(posts[0].body, { name: 'Dana', email: 'dana@example.com' });
 });
+
+/* ── the AI call couldn't go out ────────────────────────────────────────────── */
+
+const LEAD_ID = '11111111-2222-4333-8444-555555555555';
+
+function respondWith(first, second = { ok: true }, secondStatus = 200) {
+  globalThis.fetch = async (url, init) => {
+    posts.push({ url, body: JSON.parse(init.body) });
+    return posts.length === 1
+      ? Response.json(first)
+      : Response.json(second, { status: secondStatus });
+  };
+}
+
+async function submitPhoneForm() {
+  await render({ mode: 'phone' });
+  await fill('input[name="phone"]', '4075550188');
+  await tick();
+  await submit();
+}
+
+const typeMessage = (text) =>
+  act(async () => {
+    const el = container.querySelector('textarea[name="fallbackMessage"]');
+    Object.getOwnPropertyDescriptor(dom.window.HTMLTextAreaElement.prototype, 'value').set.call(el, text);
+    el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  });
+
+test('when the call could not go out, the form asks for a message instead of promising a call', async () => {
+  respondWith({ ok: true, callback: 'unavailable', followUpId: LEAD_ID });
+  await submitPhoneForm();
+
+  assert.ok(container.querySelector('textarea[name="fallbackMessage"]'), 'the message box is shown');
+  assert.doesNotMatch(container.textContent, /Expect a call shortly/);
+  assert.match(container.textContent, /We couldn.t place that call\./);
+});
+
+test('the message attaches to the lead already recorded, and only the message is sent', async () => {
+  respondWith({ ok: true, callback: 'unavailable', followUpId: LEAD_ID });
+  await submitPhoneForm();
+  await typeMessage('Leak under the sink');
+  await submit();
+
+  assert.equal(posts.length, 2);
+  assert.deepEqual(posts[1].body, { followUp: { leadId: LEAD_ID, message: 'Leak under the sink' } });
+  assert.match(container.textContent, /Your message is with our team/);
+});
+
+test('a message that fails to send says so and keeps what was typed', async () => {
+  respondWith({ ok: true, callback: 'unavailable', followUpId: LEAD_ID }, { ok: false }, 502);
+  await submitPhoneForm();
+  await typeMessage('Leak under the sink');
+  await submit();
+
+  assert.match(container.textContent, /That didn.t send/);
+  assert.equal(container.querySelector('textarea[name="fallbackMessage"]').value, 'Leak under the sink');
+});
+
+test('an empty message is not sent', async () => {
+  respondWith({ ok: true, callback: 'unavailable', followUpId: LEAD_ID });
+  await submitPhoneForm();
+  await typeMessage('   ');
+  await submit();
+  assert.equal(posts.length, 1);
+});
+
+test('a placed callback still shows the normal confirmation', async () => {
+  respondWith({ ok: true });
+  await submitPhoneForm();
+  assert.match(container.textContent, /Expect a call shortly/);
+  assert.equal(container.querySelector('textarea[name="fallbackMessage"]'), null);
+});
+
+test('a Starter form never shows the message box, even if a response claims it', async () => {
+  respondWith({ ok: true, callback: 'unavailable', followUpId: LEAD_ID });
+  await render({ mode: 'email' });
+  await fill('input[name="email"]', 'dana@example.com');
+  await submit();
+  assert.equal(container.querySelector('textarea[name="fallbackMessage"]'), null);
+  assert.match(container.textContent, /reply by email shortly/);
+});

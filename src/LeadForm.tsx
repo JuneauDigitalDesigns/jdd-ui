@@ -69,7 +69,7 @@ declare const process: { env: { NEXT_PUBLIC_BRAND_NAME?: string } };
 
 export type LeadMode = 'phone' | 'email';
 export type LeadConsentMode = 'notice' | 'checkbox';
-type Status = 'idle' | 'loading' | 'done' | 'error';
+type Status = 'idle' | 'loading' | 'done' | 'error' | 'fallback' | 'fallback-done';
 
 /** Loose on purpose. The server normalises and is the real authority; this only catches
  *  obvious typos before a round trip. Rejecting valid-but-unusual input here would cost
@@ -205,6 +205,20 @@ export async function captureLeadCallConsent(
   }
 }
 
+/**
+ * The lead to attach a message to when /api/contact says the AI call didn't go out, else null.
+ *
+ * Only a phone-mode form promised a call. A site on an older route sends neither field, and
+ * every older response falls through to the normal confirmation.
+ */
+export function callbackFallbackId(mode: LeadMode, response: unknown): string | null {
+  if (mode !== 'phone' || !response || typeof response !== 'object') return null;
+  const { callback, followUpId } = response as { callback?: unknown; followUpId?: unknown };
+  return callback === 'unavailable' && typeof followUpId === 'string' && followUpId
+    ? followUpId
+    : null;
+}
+
 export function LeadForm({
   mode = 'phone',
   submitLabel,
@@ -250,6 +264,9 @@ export function LeadForm({
   // evidence than the plain notice it would be replacing.
   const [consentChecked, setConsentChecked] = useState(false);
   const [callConsentChecked, setCallConsentChecked] = useState(false);
+  const [fallbackLeadId, setFallbackLeadId] = useState<string | null>(null);
+  const [fallbackMessage, setFallbackMessage] = useState('');
+  const [fallbackSend, setFallbackSend] = useState<'idle' | 'sending' | 'error'>('idle');
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Status>('idle');
 
@@ -316,12 +333,31 @@ export function LeadForm({
     </p>
   );
 
+  // The call-consent box and the message box are styled inline, not with Tailwind. A client site's
+  // Tailwind doesn't scan this package, so a class used here only exists if a catalog component
+  // happens to use it too. On a real site, these two have to look right regardless.
+  const inkColor = dark ? 'var(--on-ink)' : 'var(--ink)';
+  const errStyle = {
+    display: 'block',
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: 600,
+    color: dark ? '#fecaca' : 'var(--urgent)',
+  } as const;
+
   // Full-strength text rather than the muted disclosure colour: this one has to be conspicuous.
   const callConsentBox = !needsCallConsent ? null : (
     <div>
       <label
         htmlFor={callConsentId}
-        className={`flex items-start gap-2.5 text-[13.5px] leading-snug ${dark ? 'text-onInk' : 'text-ink'}`}
+        style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 10,
+          fontSize: 13.5,
+          lineHeight: 1.375,
+          color: inkColor,
+        }}
       >
         <input
           id={callConsentId}
@@ -333,12 +369,12 @@ export function LeadForm({
           onBlur={() => setTouched((t) => ({ ...t, callConsent: true }))}
           aria-invalid={showCallConsentErr || undefined}
           aria-describedby={showCallConsentErr ? `${callConsentId}-err` : undefined}
-          className="mt-px size-4 shrink-0 accent-accent"
+          style={{ width: 16, height: 16, marginTop: 2, flexShrink: 0, accentColor: 'var(--accent)' }}
         />
         <span>{callConsentText}</span>
       </label>
       {showCallConsentErr && (
-        <span id={`${callConsentId}-err`} className={errCls}>
+        <span id={`${callConsentId}-err`} style={errStyle}>
           Please tick this box so we can call you back.
         </span>
       )}
@@ -368,13 +404,36 @@ export function LeadForm({
         }),
       });
       if (!res.ok) throw new Error(String(res.status));
-      setStatus('done');
+      const leadId = callbackFallbackId(mode, await res.json().catch(() => null));
+      if (leadId) {
+        setFallbackLeadId(leadId);
+        setStatus('fallback');
+      } else {
+        setStatus('done');
+      }
     } catch {
       setStatus('error');
     }
   }
 
-  if (status === 'done') {
+  async function sendFallbackMessage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!fallbackMessage.trim()) return;
+    setFallbackSend('sending');
+    try {
+      const res = await fetch('/api/contact', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ followUp: { leadId: fallbackLeadId, message: fallbackMessage } }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      setStatus('fallback-done');
+    } catch {
+      setFallbackSend('error');
+    }
+  }
+
+  if (status === 'done' || status === 'fallback-done') {
     return (
       <div
         // `status`, not `alert`: this is a confirmation, and alert interrupts whatever the
@@ -384,11 +443,85 @@ export function LeadForm({
       >
         <p className="text-[18px] font-extrabold">Got it, thank you.</p>
         <p className={`mt-1.5 text-[15px] ${dark ? 'text-onInkSoft' : 'text-inkSoft'}`}>
-          {mode === 'phone'
-            ? 'Expect a call shortly. If it is urgent, calling us is still fastest.'
-            : 'We have your details and will reply by email shortly.'}
+          {status === 'fallback-done'
+            ? "Your message is with our team. We'll get back to you soon."
+            : mode === 'phone'
+              ? 'Expect a call shortly. If it is urgent, calling us is still fastest.'
+              : 'We have your details and will reply by email shortly.'}
         </p>
       </div>
+    );
+  }
+
+  // The AI call didn't go out. The lead is already in the inbox, so leaving here loses nothing:
+  // this only adds the visitor's words to it. Native `required` so an empty box needs no copy.
+  if (status === 'fallback') {
+    return (
+      <form
+        onSubmit={sendFallbackMessage}
+        className={className}
+        style={{
+          padding: 24,
+          borderRadius: 8,
+          background: dark ? 'rgba(255,255,255,0.1)' : 'var(--bg-soft)',
+          color: inkColor,
+        }}
+      >
+        <p role="status" style={{ fontSize: 18, fontWeight: 800 }}>
+          We couldn&apos;t place that call.
+        </p>
+        <p style={{ marginTop: 6, fontSize: 15 }}>
+          We have your name and number. Add a message below and it will go straight to our team.
+        </p>
+        <label
+          htmlFor={`${uid}-fallback`}
+          style={{ display: 'block', marginTop: 12, marginBottom: 6, fontSize: 13.5, fontWeight: 700 }}
+        >
+          Your message
+        </label>
+        <textarea
+          id={`${uid}-fallback`}
+          name="fallbackMessage"
+          rows={3}
+          required
+          maxLength={2000}
+          value={fallbackMessage}
+          onChange={(e) => setFallbackMessage(e.target.value)}
+          // 16px is not a style choice: iOS Safari zooms the page on focus for anything smaller.
+          style={{
+            display: 'block',
+            width: '100%',
+            boxSizing: 'border-box',
+            padding: '12px 16px',
+            borderRadius: 8,
+            border: `2px solid ${dark ? 'rgba(255,255,255,0.25)' : 'var(--rule)'}`,
+            background: dark ? 'rgba(255,255,255,0.1)' : 'var(--bg)',
+            color: 'inherit',
+            fontSize: 16,
+          }}
+        />
+        <button
+          type="submit"
+          disabled={fallbackSend === 'sending'}
+          style={{
+            marginTop: 12,
+            padding: '12px 24px',
+            borderRadius: 8,
+            background: 'var(--accent)',
+            color: 'var(--accent-fg)',
+            fontSize: 17,
+            fontWeight: 800,
+            opacity: fallbackSend === 'sending' ? 0.6 : 1,
+          }}
+        >
+          {fallbackSend === 'sending' ? 'Sending…' : 'Send message'}
+        </button>
+        {fallbackSend === 'error' && (
+          <p role="alert" style={{ ...errStyle, marginTop: 12, fontSize: 15 }}>
+            That didn&apos;t send. Please try again, or call us directly.
+          </p>
+        )}
+      </form>
     );
   }
 
@@ -442,7 +575,7 @@ export function LeadForm({
               the row's height with it — there it renders full-width below the row instead,
               which is still immediately below the phone field it describes. */}
           {layout === 'stack' && disclosure && <div className="mt-2">{disclosure}</div>}
-          {layout === 'stack' && callConsentBox && <div className="mt-2.5">{callConsentBox}</div>}
+          {layout === 'stack' && callConsentBox && <div style={{ marginTop: 10 }}>{callConsentBox}</div>}
         </div>
 
         <button
@@ -457,7 +590,7 @@ export function LeadForm({
       </div>
 
       {layout === 'row' && disclosure && <div className="mt-2.5">{disclosure}</div>}
-      {layout === 'row' && callConsentBox && <div className="mt-2.5">{callConsentBox}</div>}
+      {layout === 'row' && callConsentBox && <div style={{ marginTop: 10 }}>{callConsentBox}</div>}
 
       {withMessage && (
         <div className="mt-3">
