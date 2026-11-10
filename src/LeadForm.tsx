@@ -57,7 +57,9 @@
 // `turnstileToken`. The agency verifies it; a refused submission comes back 403
 // `not-verified` or 429 `too-many`, and the form shows the operator's approved words for
 // each. The token is good once, so the widget is reset after every refused submission.
-// A site with no NEXT_PUBLIC_TURNSTILE_SITE_KEY renders no widget and posts no token.
+// A site with no NEXT_PUBLIC_TURNSTILE_SITE_KEY renders no widget and posts no token. A widget
+// that can't run (v1.6.0: a host not on the widget, a blocked script) posts
+// `turnstileStatus: 'error'`, and the lead is kept without a call.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useId, useState, type ReactNode } from 'react';
 import {
@@ -405,7 +407,7 @@ export function LeadForm({
     setStatus('loading');
     setErrorText(LEAD_FORM_FAILED);
     try {
-      const turnstileToken = await turnstile.takeToken();
+      const { token: turnstileToken, widgetError } = await turnstile.takeToken();
       const consent = await captureLeadConsent(showsDisclosure);
       const callConsent = await captureLeadCallConsent(
         needsCallConsent && callConsentChecked,
@@ -421,6 +423,8 @@ export function LeadForm({
           ...(consent ? { consent } : {}),
           ...(callConsent ? { callConsent } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
+          // The check couldn't run here. Said, not hidden, so the lead is kept rather than refused.
+          ...(!turnstileToken && widgetError ? { turnstileStatus: 'error' } : {}),
           ...(honeypot ? { [HONEYPOT_FIELD]: honeypot } : {}),
         }),
       });
