@@ -51,6 +51,13 @@
 // required, unticked box naming the business and the AI voice. `callConsent` is
 // posted only when the box was ticked. /api/contact checks it again and won't
 // dial without it, so this is the first gate, not the only one.
+//
+// HUMAN CHECK (v1.5.0)
+// Each form renders a Cloudflare Turnstile widget (./turnstile) and posts its token as
+// `turnstileToken`. The agency verifies it; a refused submission comes back 403
+// `not-verified` or 429 `too-many`, and the form shows the operator's approved words for
+// each. The token is good once, so the widget is reset after every refused submission.
+// A site with no NEXT_PUBLIC_TURNSTILE_SITE_KEY renders no widget and posts no token.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useId, useState, type ReactNode } from 'react';
 import {
@@ -63,6 +70,13 @@ import {
   type LeadCallConsent,
   type LeadConsent,
 } from './lead-consent-text';
+import {
+  HONEYPOT_FIELD,
+  LEAD_FORM_FAILED,
+  leadFormErrorMessage,
+  turnstileSiteKey,
+  useTurnstile,
+} from './turnstile';
 
 // This package has no Node types, and needs only the one variable Next inlines.
 declare const process: { env: { NEXT_PUBLIC_BRAND_NAME?: string } };
@@ -269,6 +283,9 @@ export function LeadForm({
   const [fallbackSend, setFallbackSend] = useState<'idle' | 'sending' | 'error'>('idle');
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [status, setStatus] = useState<Status>('idle');
+  const [errorText, setErrorText] = useState(LEAD_FORM_FAILED);
+  const [honeypot, setHoneypot] = useState('');
+  const turnstile = useTurnstile(turnstileSiteKey());
 
   const contactLabel = mode === 'email' ? 'Email address' : 'Phone number';
   const contactValid = mode === 'email' ? looksLikeEmail(contact) : looksLikePhone(contact);
@@ -386,7 +403,9 @@ export function LeadForm({
     setTouched({ name: true, contact: true, consent: true, callConsent: true });
     if (!nameValid || !contactValid || !consentValid || !callConsentValid) return;
     setStatus('loading');
+    setErrorText(LEAD_FORM_FAILED);
     try {
+      const turnstileToken = await turnstile.takeToken();
       const consent = await captureLeadConsent(showsDisclosure);
       const callConsent = await captureLeadCallConsent(
         needsCallConsent && callConsentChecked,
@@ -401,9 +420,17 @@ export function LeadForm({
           ...(withMessage && message.trim() ? { message } : {}),
           ...(consent ? { consent } : {}),
           ...(callConsent ? { callConsent } : {}),
+          ...(turnstileToken ? { turnstileToken } : {}),
+          ...(honeypot ? { [HONEYPOT_FIELD]: honeypot } : {}),
         }),
       });
-      if (!res.ok) throw new Error(String(res.status));
+      if (!res.ok) {
+        // A token is spent by the attempt, so the next try needs a fresh one.
+        turnstile.reset();
+        setErrorText(leadFormErrorMessage(res.status, await res.json().catch(() => null)));
+        setStatus('error');
+        return;
+      }
       const leadId = callbackFallbackId(mode, await res.json().catch(() => null));
       if (leadId) {
         setFallbackLeadId(leadId);
@@ -412,6 +439,7 @@ export function LeadForm({
         setStatus('done');
       }
     } catch {
+      turnstile.reset();
       setStatus('error');
     }
   }
@@ -611,9 +639,27 @@ export function LeadForm({
       {/* The state the old per-component forms set and then never rendered. `alert` because
           the user has just acted and needs to know it failed, and the phone number is given
           as the fallback rather than asking them to try again into the void. */}
+      {/* The human check. Empty for nearly everyone; Cloudflare draws a checkbox here only for
+          a visitor it is unsure of. */}
+      <div ref={turnstile.containerRef} style={{ marginTop: 10 }} />
+
+      {/* No person sees or reaches this; a script that fills every input fills it too. */}
+      <div aria-hidden="true" style={{ position: 'absolute', left: '-10000px', width: 1, height: 1, overflow: 'hidden' }}>
+        <label htmlFor={`${uid}-hp`}>Leave this empty</label>
+        <input
+          id={`${uid}-hp`}
+          name={HONEYPOT_FIELD}
+          type="text"
+          tabIndex={-1}
+          autoComplete="off"
+          value={honeypot}
+          onChange={(e) => setHoneypot(e.target.value)}
+        />
+      </div>
+
       {status === 'error' && (
         <p role="alert" className={`mt-3 text-[15px] font-semibold ${dark ? 'text-red-200' : 'text-urgent'}`}>
-          That didn&apos;t send. Please try again, or call us directly.
+          {errorText}
         </p>
       )}
     </form>
