@@ -38,3 +38,16 @@ catalog's own typography. The console keeps its own wrapper.
 `github:` dependencies on a private repo cannot be fetched by Vercel's build without
 credentials, and every client site builds on Vercel. `@jdd/schema` is public for the same
 reason.
+
+## The lead form's human check (v1.5.0)
+
+`LeadForm` renders a Cloudflare Turnstile widget (managed, `interaction-only`: invisible for
+nearly every visitor) when the client build has `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, and posts
+its token as `turnstileToken`. The agency verifies it, never the browser. Without the key the
+form behaves exactly as v1.4.0. It also carries a hidden honeypot, posted as `jdd_hp` only
+when something filled it. The two refusal messages (`LEAD_FORM_NOT_VERIFIED`,
+`LEAD_FORM_TOO_MANY` in `src/turnstile.ts`) were approved word for word on 2026-11-09.
+
+Pair it with a `/api/contact` that understands it (jdd-ops `lib/site-routes/contact.route.ts`
+from the same change): an older route forwards the token into the lead's fields and never
+verifies it. The console's export pairing check refuses that combination.
