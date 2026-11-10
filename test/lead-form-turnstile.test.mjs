@@ -201,3 +201,49 @@ test('the honeypot is out of reach, and posted only when something filled it', a
   await fillAndSubmit();
   assert.equal(posts[1].body.jdd_hp, 'http://spam.example');
 });
+
+/* ── the widget can't run (v1.6.0) ─────────────────────────────────────────────
+ * Cloudflare refuses to render a widget on a host that isn't on it (error 110200). The form then
+ * had no token and posted as if it had never had a check, and the agency refused the lead. It now
+ * says the check couldn't run, and the agency keeps the lead without placing a call
+ * (operator decision, 2026-11-09: never lose a lead).
+ */
+
+/** A failed widget gets 1.5 s to recover by itself before the submission goes without a token. */
+const afterGrace = () => act(async () => new Promise((r) => setTimeout(r, 1700)));
+
+test("the widget reports an error: the submission says so, with no token", async () => {
+  dom.window.turnstile = fakeTurnstile({ auto: false });
+  await render(form());
+  const [w] = dom.window.turnstile.widgets;
+  w.opts['error-callback']();
+  await fillAndSubmit();
+  await afterGrace();
+  assert.equal(posts[0].body.turnstileStatus, 'error');
+  assert.equal('turnstileToken' in posts[0].body, false);
+});
+
+test("the widget can't even render: the submission says so", async () => {
+  dom.window.turnstile = { ...fakeTurnstile(), render: () => { throw new Error('110200'); } };
+  await render(form());
+  await fillAndSubmit();
+  await afterGrace();
+  assert.equal(posts[0].body.turnstileStatus, 'error');
+});
+
+test('a widget that errored and then recovered posts its token, not the error', async () => {
+  dom.window.turnstile = fakeTurnstile({ auto: false });
+  await render(form());
+  const [w] = dom.window.turnstile.widgets;
+  w.opts['error-callback']();
+  w.opts.callback('recovered');
+  await fillAndSubmit();
+  assert.equal(posts[0].body.turnstileToken, 'recovered');
+  assert.equal('turnstileStatus' in posts[0].body, false);
+});
+
+test('a working widget never posts an error status', async () => {
+  await render(form());
+  await fillAndSubmit();
+  assert.equal('turnstileStatus' in posts[0].body, false);
+});

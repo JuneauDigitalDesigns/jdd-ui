@@ -83,8 +83,9 @@ export function loadTurnstile(): Promise<TurnstileApi | null> {
 
 /**
  * One widget for one form. `containerRef` goes on an empty div; `takeToken()` gives the token
- * for this submission, waiting a few seconds if the widget is still working; `reset()` after a
- * submission asks for a fresh one, because Cloudflare accepts each token once.
+ * for this submission (waiting a few seconds if the widget is still working) or says the widget
+ * couldn't run; `reset()` after a submission asks for a fresh one, because Cloudflare accepts each
+ * token once.
  *
  * With no site key it renders nothing and `takeToken()` gives '', exactly the form as it was.
  */
@@ -92,50 +93,77 @@ export function useTurnstile(siteKey: string) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const widget = useRef<{ api: TurnstileApi; id: string } | null>(null);
   const token = useRef('');
-  const waiters = useRef<Array<(t: string) => void>>([]);
+  /** The widget couldn't run: no script, refused to render, or reported an error. */
+  const failed = useRef(false);
+  const waiters = useRef<Array<(r: TurnstileResult) => void>>([]);
 
   useEffect(() => {
     if (!siteKey) return;
     let cancelled = false;
+    let grace: ReturnType<typeof setTimeout> | undefined;
+    const settle = (r: TurnstileResult) => {
+      for (const w of waiters.current.splice(0)) w(r);
+    };
     const deliver = (t: string) => {
       token.current = t;
-      if (t) for (const w of waiters.current.splice(0)) w(t);
+      if (!t) return;
+      failed.current = false;
+      clearTimeout(grace);
+      settle({ token: t, widgetError: false });
+    };
+    // Turnstile retries after an error by itself, so a waiting submission gets a moment for the
+    // retry to produce a token before it goes without one.
+    const fail = () => {
+      token.current = '';
+      failed.current = true;
+      clearTimeout(grace);
+      grace = setTimeout(() => settle({ token: '', widgetError: true }), FAILED_GRACE_MS);
     };
     loadTurnstile().then((api) => {
       const el = containerRef.current;
-      if (cancelled || !api || !el) return;
-      const id = api.render(el, {
-        sitekey: siteKey,
-        action: TURNSTILE_ACTION,
-        appearance: 'interaction-only',
-        'refresh-expired': 'auto',
-        callback: deliver,
-        'expired-callback': () => deliver(''),
-        'error-callback': () => deliver(''),
-      });
-      if (id !== undefined) widget.current = { api, id };
+      if (cancelled || !el) return;
+      if (!api) return fail();
+      let id: string | undefined;
+      try {
+        id = api.render(el, {
+          sitekey: siteKey,
+          action: TURNSTILE_ACTION,
+          appearance: 'interaction-only',
+          'refresh-expired': 'auto',
+          callback: deliver,
+          'expired-callback': () => deliver(''),
+          'error-callback': fail,
+        });
+      } catch {
+        // Cloudflare throws for a site key it doesn't know, or a host not on the widget.
+        return fail();
+      }
+      if (id === undefined) return fail();
+      widget.current = { api, id };
     });
     return () => {
       cancelled = true;
+      clearTimeout(grace);
       if (widget.current) widget.current.api.remove(widget.current.id);
       widget.current = null;
     };
   }, [siteKey]);
 
   const takeToken = useCallback(
-    (waitMs = 8000): Promise<string> => {
-      if (!siteKey) return Promise.resolve('');
+    (waitMs = 8000): Promise<TurnstileResult> => {
+      if (!siteKey) return Promise.resolve({ token: '', widgetError: false });
       const ready = token.current || (widget.current && widget.current.api.getResponse(widget.current.id)) || '';
-      if (ready) return Promise.resolve(ready);
+      if (ready) return Promise.resolve({ token: ready, widgetError: false });
       return new Promise((resolve) => {
+        const finish = (r: TurnstileResult) => {
+          clearTimeout(timer);
+          resolve(r);
+        };
+        // No token in time is the same as a widget that couldn't run: the lead still goes.
         const timer = setTimeout(() => {
           waiters.current = waiters.current.filter((w) => w !== finish);
-          resolve('');
-        }, waitMs);
-        const finish = (t: string) => {
-          clearTimeout(timer);
-          resolve(t);
-        };
+          resolve({ token: '', widgetError: true });
+        }, failed.current ? FAILED_GRACE_MS : waitMs);
         waiters.current.push(finish);
       });
     },
@@ -149,6 +177,19 @@ export function useTurnstile(siteKey: string) {
 
   return { containerRef, takeToken, reset };
 }
+
+/**
+ * What a submission carries from the widget. `widgetError` means it couldn't produce a token
+ * (most often: this host isn't on the site's widget, so Cloudflare refuses to render it). The form
+ * then posts `turnstileStatus: 'error'`, and the agency keeps the lead without placing a call
+ * (operator decision, 2026-11-09: never lose a lead). The visitor sees nothing different.
+ */
+export interface TurnstileResult {
+  token: string;
+  widgetError: boolean;
+}
+
+const FAILED_GRACE_MS = 1500;
 
 /**
  * The words for a submission that didn't go through. A and B were approved word for word by

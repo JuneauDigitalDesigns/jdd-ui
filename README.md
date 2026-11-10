@@ -51,3 +51,8 @@ when something filled it. The two refusal messages (`LEAD_FORM_NOT_VERIFIED`,
 Pair it with a `/api/contact` that understands it (jdd-ops `lib/site-routes/contact.route.ts`
 from the same change): an older route forwards the token into the lead's fields and never
 verifies it. The console's export pairing check refuses that combination.
+
+**v1.6.0.** A widget that can't run (most often a host that isn't on the site's widget, which
+Cloudflare refuses to render) makes the form post `turnstileStatus: 'error'` with no token, after a
+1.5 s grace for Cloudflare's own retry. The agency then keeps the lead and places no call, instead
+of refusing it. The visitor sees nothing different.
