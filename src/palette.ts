@@ -63,6 +63,7 @@ export function paletteVars(brand: BrandLike): CSSProperties {
   // (tinting toward white on a dark page washes the ramp out to nothing).
   const dark = isDarkHex(bg);
   const inkPanel = dark ? shade(bg, 0.25) : shade(ink, 0.08);
+  const inkPanel2 = mix(inkPanel, accent, 0.16);
   const onInk = readableOn(inkPanel, dark ? ink : WARM_INK);
   /* Decision 9 extends to the tint ramp: mixing the accent toward pure white produced faintly
      COOL tints sitting on a warm paper ground, which is the exact mismatch decision 9 exists to
@@ -140,7 +141,14 @@ export function paletteVars(brand: BrandLike): CSSProperties {
     '--accent-grad': `linear-gradient(135deg, ${accent} 0%, ${accentStrong} 100%)`,
     // ── on-brand dark ("contrast" skin) section tones ──
     '--ink-panel': inkPanel,
-    '--ink-panel-2': mix(inkPanel, accent, 0.16),
+    '--ink-panel-2': inkPanel2,
+    /* The accent as TEXT on the dark bands (--ink-panel / --ink-panel-2): hero and CTA emphasis
+       words, ticks, hover states. `--accent-text` is the accent darkened for the LIGHT ground, so on
+       a dark band it went the wrong way. Measured 2026-11-15 on the HVAC template: "today." in the
+       hero was #b34f26 on the navy band, 2.2:1, on every HVAC palette. This lightens the accent
+       toward the warm off-white only as far as AA needs, on both bands, so it stays the brand's
+       colour. A dark palette's accent usually passes already and comes back unchanged. */
+    '--accent-on-ink': accentText(accent, inkPanel, inkPanel2),
     '--on-ink': onInk,
     '--on-ink-soft': withAlpha(onInk, 0.7),
     '--rule-ink': withAlpha(onInk, 0.16),
