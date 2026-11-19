@@ -310,9 +310,11 @@ export function LeadForm({
 
   const dark = surface === 'dark';
   const field = [
-    'w-full rounded-lg border-2 px-4 py-3 text-[16px] outline-none transition-colors',
+    'w-full rounded-lg border-2 px-4 py-3 text-[16px] leading-6 outline-none transition-colors',
     // 16px is not a style choice: iOS Safari zooms the viewport on focus for anything
-    // smaller, which yanks the page around mid-form.
+    // smaller, which yanks the page around mid-form. leading-6 fixes the line at 24px, so an
+    // input is 52px tall on every site, whatever the body's line height (the submit button
+    // shares the same box: the row lines them up by their bottom edges).
     dark
       ? 'border-white/25 bg-white/10 text-onInk placeholder-white/40 focus:border-accent'
       : 'border-rule bg-bg text-ink placeholder-inkSoft/60 focus:border-accent',
@@ -559,7 +561,10 @@ export function LeadForm({
 
   return (
     <form onSubmit={submit} noValidate className={className}>
-      <div className={layout === 'row' ? 'flex flex-col gap-3 sm:flex-row sm:items-start' : 'flex flex-col gap-3'}>
+      {/* The row lines the button up with the INPUTS (Xander, 2026-11-19): every item meets at
+          its bottom edge, and the button and inputs share one 52px box. It used to sit at a
+          guessed sm:mt-[26px], which client sites never generated and which a taller label broke. */}
+      <div className={layout === 'row' ? 'flex flex-col gap-3 sm:flex-row sm:items-end' : 'flex flex-col gap-3'}>
         <div className={layout === 'row' ? 'flex-1' : ''}>
           <label htmlFor={`${uid}-name`} className={labelCls}>Your name</label>
           <input
@@ -574,7 +579,7 @@ export function LeadForm({
             aria-describedby={showNameErr ? `${uid}-name-err` : undefined}
             className={`${field} ${showNameErr ? errField : ''}`}
           />
-          {showNameErr && <span id={`${uid}-name-err`} className={errCls}>Please tell us your name.</span>}
+          {layout === 'stack' && showNameErr && <span id={`${uid}-name-err`} className={errCls}>Please tell us your name.</span>}
         </div>
 
         <div className={layout === 'row' ? 'flex-1' : ''}>
@@ -597,7 +602,7 @@ export function LeadForm({
             })}
             className={`${field} ${showContactErr ? errField : ''}`}
           />
-          {showContactErr && (
+          {layout === 'stack' && showContactErr && (
             <span id={contactErrorId(uid)} className={errCls}>
               {mode === 'email' ? 'That email address does not look right.' : 'Please enter a number we can reach you on.'}
             </span>
@@ -613,14 +618,23 @@ export function LeadForm({
         <button
           type="submit"
           disabled={status === 'loading'}
-          className={`shrink-0 rounded-lg bg-accent px-6 py-3 text-[17px] font-extrabold text-accentFg transition-[filter] hover:brightness-105 disabled:opacity-60 ${
-            layout === 'row' ? 'sm:mt-[26px]' : ''
-          }`}
+          className="shrink-0 rounded-lg border-2 border-transparent bg-accent px-6 py-3 text-[17px] font-extrabold leading-6 text-accentFg transition-[filter] hover:brightness-105 disabled:opacity-60"
         >
           {status === 'loading' ? 'Sending…' : submitLabel}
         </button>
       </div>
 
+      {/* In the row a field's error goes below it, so it never pushes the button out of line. */}
+      {layout === 'row' && (showNameErr || showContactErr) && (
+        <div className="mt-1.5">
+          {showNameErr && <span id={`${uid}-name-err`} className={errCls}>Please tell us your name.</span>}
+          {showContactErr && (
+            <span id={contactErrorId(uid)} className={errCls}>
+              {mode === 'email' ? 'That email address does not look right.' : 'Please enter a number we can reach you on.'}
+            </span>
+          )}
+        </div>
+      )}
       {layout === 'row' && disclosure && <div className="mt-2.5">{disclosure}</div>}
       {layout === 'row' && callConsentBox && <div style={{ marginTop: 10 }}>{callConsentBox}</div>}
 
