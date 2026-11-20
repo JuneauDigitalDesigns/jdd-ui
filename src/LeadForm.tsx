@@ -60,6 +60,14 @@
 // A site with no NEXT_PUBLIC_TURNSTILE_SITE_KEY renders no widget and posts no token. A widget
 // that can't run (v1.6.0: a host not on the widget, a blocked script) posts
 // `turnstileStatus: 'error'`, and the lead is kept without a call.
+//
+// STARTER SAYS WHAT THEY NEED (v1.8.0)
+// Xander, 2026-11-20: "starter leads land in the portal with no information at all". An email-mode
+// form (Starter's) always has the message box, required, above a "Send" button, whatever
+// `withMessage` and `submitLabel` say. A prefilled `initialMessage` (a service page's "Service: …")
+// counts as the message. Phone mode is exactly as it was. The words are below, approved word for
+// word on 2026-11-20; STARTER_FORM_HEADING is the catalog's default for the heading it draws above
+// the form, which stays editable per site.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useId, useState, type ReactNode } from 'react';
 import {
@@ -79,6 +87,18 @@ import {
   turnstileSiteKey,
   useTurnstile,
 } from './turnstile';
+
+/** Approved word for word (Xander, 2026-11-20). */
+export const STARTER_SUBMIT_LABEL = 'Send';
+export const STARTER_FORM_HEADING = 'Tell us what you need';
+export const STARTER_MESSAGE_LABEL = 'What do you need?';
+export const STARTER_MESSAGE_PLACEHOLDER = "The job, where it is, and when you'd like it done.";
+export const STARTER_MESSAGE_REQUIRED = 'Please tell us what you need.';
+
+/** Whether this form must say what the visitor needs: every email-mode (Starter) form does. */
+export function requiresMessage(mode: LeadMode): boolean {
+  return mode === 'email';
+}
 
 // This package has no Node types, and needs only the one variable Next inlines.
 declare const process: { env: { NEXT_PUBLIC_BRAND_NAME?: string } };
@@ -308,6 +328,12 @@ export function LeadForm({
   const showConsentErr = touched.consent && !consentValid;
   const showCallConsentErr = touched.callConsent && !callConsentValid;
 
+  // v1.8.0: Starter's box is required and sits above the button; Growth's stays optional, after it.
+  const messageRequired = requiresMessage(mode);
+  const messageValid = !messageRequired || message.trim().length > 0;
+  const showMessageErr = touched.message && !messageValid;
+  const messageErrId = `${uid}-message-err`;
+
   const dark = surface === 'dark';
   const field = [
     'w-full rounded-lg border-2 px-4 py-3 text-[16px] leading-6 outline-none transition-colors',
@@ -404,8 +430,8 @@ export function LeadForm({
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setTouched({ name: true, contact: true, consent: true, callConsent: true });
-    if (!nameValid || !contactValid || !consentValid || !callConsentValid) return;
+    setTouched({ name: true, contact: true, consent: true, callConsent: true, message: true });
+    if (!nameValid || !contactValid || !consentValid || !callConsentValid || !messageValid) return;
     setStatus('loading');
     setErrorText(LEAD_FORM_FAILED);
     try {
@@ -421,7 +447,7 @@ export function LeadForm({
         body: JSON.stringify({
           name,
           [mode]: contact,
-          ...(withMessage && message.trim() ? { message } : {}),
+          ...((withMessage || messageRequired) && message.trim() ? { message } : {}),
           ...(consent ? { consent } : {}),
           ...(callConsent ? { callConsent } : {}),
           ...(turnstileToken ? { turnstileToken } : {}),
@@ -559,6 +585,16 @@ export function LeadForm({
     );
   }
 
+  const submitButton = (
+    <button
+      type="submit"
+      disabled={status === 'loading'}
+      className="shrink-0 rounded-lg border-2 border-transparent bg-accent px-6 py-3 text-[17px] font-extrabold leading-6 text-accentFg transition-[filter] hover:brightness-105 disabled:opacity-60"
+    >
+      {status === 'loading' ? 'Sending…' : messageRequired ? STARTER_SUBMIT_LABEL : submitLabel}
+    </button>
+  );
+
   return (
     <form onSubmit={submit} noValidate className={className}>
       {/* The row lines the button up with the INPUTS (Xander, 2026-11-19): every item meets at
@@ -615,13 +651,7 @@ export function LeadForm({
           {layout === 'stack' && callConsentBox && <div style={{ marginTop: 10 }}>{callConsentBox}</div>}
         </div>
 
-        <button
-          type="submit"
-          disabled={status === 'loading'}
-          className="shrink-0 rounded-lg border-2 border-transparent bg-accent px-6 py-3 text-[17px] font-extrabold leading-6 text-accentFg transition-[filter] hover:brightness-105 disabled:opacity-60"
-        >
-          {status === 'loading' ? 'Sending…' : submitLabel}
-        </button>
+        {!messageRequired && submitButton}
       </div>
 
       {/* In the row a field's error goes below it, so it never pushes the button out of line. */}
@@ -638,7 +668,31 @@ export function LeadForm({
       {layout === 'row' && disclosure && <div className="mt-2.5">{disclosure}</div>}
       {layout === 'row' && callConsentBox && <div style={{ marginTop: 10 }}>{callConsentBox}</div>}
 
-      {withMessage && (
+      {messageRequired && (
+        <>
+          <div className="mt-3">
+            <label htmlFor={`${uid}-message`} className={labelCls}>{STARTER_MESSAGE_LABEL}</label>
+            <textarea
+              id={`${uid}-message`}
+              name="message"
+              rows={3}
+              maxLength={2000}
+              placeholder={STARTER_MESSAGE_PLACEHOLDER}
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              onBlur={() => setTouched((t) => ({ ...t, message: true }))}
+              aria-required="true"
+              aria-invalid={showMessageErr || undefined}
+              aria-describedby={showMessageErr ? messageErrId : undefined}
+              className={`${field} ${showMessageErr ? errField : ''}`}
+            />
+            {showMessageErr && <span id={messageErrId} className={errCls}>{STARTER_MESSAGE_REQUIRED}</span>}
+          </div>
+          <div className={layout === 'row' ? 'mt-3 flex flex-col sm:flex-row' : 'mt-3 flex flex-col'}>{submitButton}</div>
+        </>
+      )}
+
+      {withMessage && !messageRequired && (
         <div className="mt-3">
           <label htmlFor={`${uid}-message`} className={labelCls}>
             What do you need? <span className="font-semibold opacity-70">(optional)</span>
