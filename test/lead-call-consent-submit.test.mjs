@@ -51,7 +51,8 @@ const render = (props) =>
 
 function type(selector, value) {
   const el = container.querySelector(selector);
-  Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(el, value);
+  const proto = el.tagName === 'TEXTAREA' ? dom.window.HTMLTextAreaElement.prototype : dom.window.HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 }
 
@@ -105,14 +106,15 @@ test('once ticked, the proof is posted with the page but not its query string', 
   assert.equal(consent.textVersion, 'lead-sms-consent-v1', 'the SMS record is unchanged');
 });
 
-test('a Starter or web-only form submits as before, with no box and no call consent', async () => {
+test('a Starter or web-only form has no call-consent box and posts no call consent', async () => {
   await render({ mode: 'email' });
   assert.equal(container.querySelector('input[name="callConsent"]'), null);
   await fill('input[name="email"]', 'dana@example.com');
+  await fill('textarea[name="message"]', 'Need a quote'); // required on Starter since v1.8.0
   await submit();
 
   assert.equal(posts.length, 1);
-  assert.deepEqual(posts[0].body, { name: 'Dana', email: 'dana@example.com' });
+  assert.deepEqual(posts[0].body, { name: 'Dana', email: 'dana@example.com', message: 'Need a quote' });
 });
 
 /* ── the AI call couldn't go out ────────────────────────────────────────────── */
@@ -191,6 +193,7 @@ test('a Starter form never shows the message box, even if a response claims it',
   respondWith({ ok: true, callback: 'unavailable', followUpId: LEAD_ID });
   await render({ mode: 'email' });
   await fill('input[name="email"]', 'dana@example.com');
+  await fill('textarea[name="message"]', 'Need a quote');
   await submit();
   assert.equal(container.querySelector('textarea[name="fallbackMessage"]'), null);
   assert.match(container.textContent, /reply by email shortly/);

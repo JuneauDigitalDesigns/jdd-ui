@@ -82,7 +82,8 @@ const form = (props = {}) => h(LeadForm, { mode: 'email', submitLabel: 'Go', ...
 
 function type(scope, selector, value) {
   const el = scope.querySelector(selector);
-  Object.getOwnPropertyDescriptor(dom.window.HTMLInputElement.prototype, 'value').set.call(el, value);
+  const proto = el.tagName === 'TEXTAREA' ? dom.window.HTMLTextAreaElement.prototype : dom.window.HTMLInputElement.prototype;
+  Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 }
 
@@ -90,6 +91,8 @@ async function fillAndSubmit(scope = container) {
   await act(async () => {
     type(scope, 'input[name="name"]', 'Dana');
     type(scope, 'input[name="email"]', 'dana@example.com');
+    // A Starter form's message is required (v1.8.0).
+    type(scope, 'textarea[name="message"]', 'Need a quote');
   });
   await act(async () => {
     (scope.tagName === 'FORM' ? scope : scope.querySelector('form')).dispatchEvent(new dom.window.Event('submit', { bubbles: true, cancelable: true }));
@@ -182,7 +185,7 @@ test('a site without a key renders no widget and posts no token, as before', asy
   await render(form());
   assert.equal(dom.window.turnstile.widgets.length, 0);
   await fillAndSubmit();
-  assert.deepEqual(posts[0].body, { name: 'Dana', email: 'dana@example.com' });
+  assert.deepEqual(posts[0].body, { name: 'Dana', email: 'dana@example.com', message: 'Need a quote' });
 });
 
 test('the honeypot is out of reach, and posted only when something filled it', async () => {
