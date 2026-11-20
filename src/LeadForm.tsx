@@ -277,7 +277,7 @@ export function LeadForm({
   /** How the SMS disclosure is presented (phone mode only — see `showsDisclosure` below).
    *
    *  `notice` is the default and the operator's working decision: this is a transactional
-   *  reply to an enquiry the customer opened, so clear notice is the proportionate
+   *  reply to an inquiry the customer opened, so clear notice is the proportionate
    *  disclosure, and the hash is the evidence. `checkbox` is stronger evidence — an
    *  affirmative act, blocking submission until ticked — at the cost of friction on the one
    *  element on the page that makes money. It is a prop rather than a rewrite precisely so

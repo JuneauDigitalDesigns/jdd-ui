@@ -49,6 +49,8 @@ import {
  * ───────────────────────────────────────────────────────────────────────────── */
 const KNOWN_CONSENT_HASHES = {
   'lead-sms-consent-v1': '049b68b1a2e396a1d237fdb57198a885e75b14675336357c418591f6801b4726',
+  // v2 (2026-11-20): "inquiry", the house spelling, approved by Xander. Same meaning as v1.
+  'lead-sms-consent-v2': '729ea625dbf0c0d592b3fb6724803609eac36593495eb02b67a021665da79169',
   // The hash of the template, `{business}` included: each site renders its own name.
   'lead-call-consent-v1': '6524672d2aacdcdaae2dc9ac9b3dcb939491d150c39122b888aa647685fadbd1',
 };
@@ -89,6 +91,13 @@ test('the hash is stable, reflow-proof, and sensitive to real edits', async () =
 test('the canonical text is already canonical, so what renders is what is hashed', () => {
   // If this drifts, the rendered element shows one string and the hash covers another.
   assert.equal(canonicalizeConsentText(LEAD_SMS_CONSENT_TEXT), LEAD_SMS_CONSENT_TEXT);
+});
+
+test('the disclosure is in house style: "inquiry", never "enquiry"', () => {
+  // v1 said "enquiry", on every client site until v2 (Xander, 2026-11-20).
+  assert.doesNotMatch(LEAD_SMS_CONSENT_TEXT, /enquir/i);
+  assert.match(LEAD_SMS_CONSENT_TEXT, /about your inquiry./);
+  assert.equal(LEAD_SMS_CONSENT_VERSION, 'lead-sms-consent-v2');
 });
 
 test('the disclosure carries the four parts a carrier looks for', () => {

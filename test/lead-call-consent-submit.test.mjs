@@ -103,7 +103,7 @@ test('once ticked, the proof is posted with the page but not its query string', 
     '6681bc51390caa2572e46e96b6187a508492f12875f407609d8497ed8b441cfe',
     'the hash of the sentence naming this business',
   );
-  assert.equal(consent.textVersion, 'lead-sms-consent-v1', 'the SMS record is unchanged');
+  assert.equal(consent.textVersion, 'lead-sms-consent-v2', 'the SMS record is unchanged');
 });
 
 test('a Starter or web-only form has no call-consent box and posts no call consent', async () => {

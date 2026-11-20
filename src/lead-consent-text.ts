@@ -24,9 +24,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * v1 (2026-11-02) — scoped to a **reply to this enquiry**.
+ * v2 (2026-11-20) — v1 with "inquiry", the house spelling, in place of "enquiry"
+ *   (approved by Xander). The meaning and scope are unchanged.
+ * v1 (2026-11-02) — scoped to a **reply to this inquiry**.
  *
- * "about your enquiry" is load-bearing, not padding. This is the client's own
+ * "about your inquiry" is load-bearing, not padding. This is the client's own
  * `CUSTOMER_CARE` lane — the business replying to a customer who just asked to be
  * contacted — and it must never be readable as consent for anything recurring or
  * marketing-adjacent. That is a different program with different disclosure, and
@@ -35,10 +37,11 @@
  * carries "Consent is not a condition of purchase" because it is attached to a
  * purchase; nothing is being bought here, so it would be noise.
  */
-export const LEAD_SMS_CONSENT_VERSION = 'lead-sms-consent-v1';
+export const LEAD_SMS_CONSENT_VERSION = 'lead-sms-consent-v2';
 
 /**
- * Approved by the operator 2026-11-02, shipped as v1.3.0.
+ * Approved by the operator 2026-11-02, shipped as v1.3.0. Respelled "inquiry" 2026-11-20 (v2),
+ * shipped as v1.9.0. The agency's table of wordings (`app/lib/text-consent.ts`) has both rows.
  *
  * Carrier-reviewable copy: it is not the operator's to change casually and not an
  * engineer's to change at all. Editing this sentence means bumping the version
@@ -46,7 +49,7 @@ export const LEAD_SMS_CONSENT_VERSION = 'lead-sms-consent-v1';
  * written before the edit stops matching the words it claims were shown.
  */
 export const LEAD_SMS_CONSENT_TEXT =
-  'By giving us your number you agree we may text you about your enquiry. ' +
+  'By giving us your number you agree we may text you about your inquiry. ' +
   'Message and data rates may apply. Message frequency varies. ' +
   'Reply STOP to opt out, HELP for help.';
 
