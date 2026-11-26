@@ -589,7 +589,8 @@ export function LeadForm({
     <button
       type="submit"
       disabled={status === 'loading'}
-      className="shrink-0 rounded-lg border-2 border-transparent bg-accent px-6 py-3 text-[17px] font-extrabold leading-6 text-accentFg transition-[filter] hover:brightness-105 disabled:opacity-60"
+      // v1.10.0 (Xander, 2026-11-26): in the row the button is wider, on every plan.
+      className={`shrink-0 rounded-lg border-2 border-transparent bg-accent px-6 py-3 text-[17px] font-extrabold leading-6 text-accentFg transition-[filter] hover:brightness-105 disabled:opacity-60 ${layout === 'row' ? 'sm:min-w-[200px]' : ''}`}
     >
       {status === 'loading' ? 'Sending…' : messageRequired ? STARTER_SUBMIT_LABEL : submitLabel}
     </button>
@@ -688,7 +689,9 @@ export function LeadForm({
             />
             {showMessageErr && <span id={messageErrId} className={errCls}>{STARTER_MESSAGE_REQUIRED}</span>}
           </div>
-          <div className={layout === 'row' ? 'mt-3 flex flex-col sm:flex-row' : 'mt-3 flex flex-col'}>{submitButton}</div>
+          {/* v1.10.0: on its own line (a required message, Starter and website), the row's button
+              ends at the right, not the left (Xander, 2026-11-26). */}
+          <div className={layout === 'row' ? 'mt-3 flex flex-col sm:flex-row sm:justify-end' : 'mt-3 flex flex-col'}>{submitButton}</div>
         </>
       )}
 
